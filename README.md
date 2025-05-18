@@ -1,7 +1,7 @@
 # APBD_10
 To launch a project insert into appsetting.json provided code:
 "ConnectionStrings": {
-    "MyDatabse": "put your connection string here"
+    "MyDatabse": "*put your connection string here*"
   }
 
 I divided the solution into three projects to keep it clean and organized.
