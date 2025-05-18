@@ -1,0 +1,6 @@
+@Device.RestApi_HostAddress = http://localhost:5273
+
+GET {{Device.RestApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
