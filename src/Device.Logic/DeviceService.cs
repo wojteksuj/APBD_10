@@ -3,19 +3,15 @@ using Device.Entities;
 using Device.Logic.Models;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-
-
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
 public class DeviceService : IDeviceService
 {
     private readonly DeviceContext _context;
-    private readonly IDeviceValidator _validator;
 
-    public DeviceService(DeviceContext context, IDeviceValidator validator)
+    public DeviceService(DeviceContext context)
     {
         _context = context;
-        _validator = validator;
     }
 
     public async Task<IEnumerable<DeviceDto>> GetAllAsync()
@@ -40,34 +36,15 @@ public class DeviceService : IDeviceService
 
         if (device == null) return null;
 
-        object props;
-        try
-        {
-            var typeName = device.DeviceType?.Name.ToLower();
-            var json = JObject.Parse(device.AdditionalProperties);
-
-            props = device.DeviceType?.Name.ToLower() switch
-            {
-                "smartwatch" => JsonConvert.DeserializeObject<SmartwatchProps>(device.AdditionalProperties) ?? new object(),
-                "personalcomputer" => JsonConvert.DeserializeObject<PersonalComputerProps>(device.AdditionalProperties) ?? new object(),
-                "embedded" => JsonConvert.DeserializeObject<EmbeddedProps>(device.AdditionalProperties) ?? new object(),
-                "monitor" => JsonConvert.DeserializeObject<MonitorProps>(device.AdditionalProperties) ?? new object(),
-                "printer" => JsonConvert.DeserializeObject<PrinterProps>(device.AdditionalProperties) ?? new object(),
-                _ => new object()
-            };
-
-        }
-        catch
-        {
-            props = new object();
-        }
+        var props = JsonConvert.DeserializeObject<Dictionary<string, object>>(device.AdditionalProperties)
+                    ?? new Dictionary<string, object>();
 
         var currentEmployee = device.DeviceEmployees
             .Where(de => de.ReturnDate == null)
             .Select(de => new EmployeeDto
             {
                 Id = de.Employee.Id.ToString(),
-                FullName = de.Employee.Person.FirstName + " " + de.Employee.Person.MiddleName + " " + de.Employee.Person.LastName,
+                FullName = $"{de.Employee.Person.FirstName} {de.Employee.Person.MiddleName} {de.Employee.Person.LastName}",
             })
             .FirstOrDefault();
 
@@ -82,18 +59,20 @@ public class DeviceService : IDeviceService
 
     public async Task<int> CreateAsync(CreateDeviceDto dto)
     {
-        var error = _validator.ValidateDevice(dto);
-        if (error != null) throw new ArgumentException(error);
-
         var type = await _context.DeviceTypes.FirstOrDefaultAsync(dt => dt.Name == dto.DeviceTypeName);
         if (type == null) throw new ArgumentException("Invalid device type");
 
-        var device = new Device
+        var rawProps = dto.AdditionalProperties.ToDictionary(
+            kvp => kvp.Key,
+            kvp => JsonSerializer.Deserialize<object>(kvp.Value.GetRawText())!
+        );
+
+        var device = new Entities.Device
         {
-            Name = dto.DeviceTypeName,
+            Name = dto.Name,
             IsEnabled = dto.IsEnabled,
             DeviceTypeId = type.Id,
-            AdditionalProperties = JsonConvert.SerializeObject(dto.AdditionalProperties)
+            AdditionalProperties = JsonConvert.SerializeObject(rawProps)
         };
 
         _context.Devices.Add(device);
@@ -103,18 +82,20 @@ public class DeviceService : IDeviceService
 
     public async Task<bool> UpdateAsync(int id, UpdateDeviceDto dto)
     {
-        var error = _validator.ValidateDevice(dto);
-        if (error != null) throw new ArgumentException(error);
-
         var device = await _context.Devices.FirstOrDefaultAsync(d => d.Id == id);
         if (device == null) return false;
 
         var type = await _context.DeviceTypes.FirstOrDefaultAsync(dt => dt.Name == dto.DeviceTypeName);
         if (type == null) throw new ArgumentException("Invalid device type");
 
+        var rawProps = dto.AdditionalProperties.ToDictionary(
+            kvp => kvp.Key,
+            kvp => JsonSerializer.Deserialize<object>(kvp.Value.GetRawText())!
+        );
+
         device.DeviceTypeId = type.Id;
         device.IsEnabled = dto.IsEnabled;
-        device.AdditionalProperties = JsonConvert.SerializeObject(dto.AdditionalProperties);
+        device.AdditionalProperties = JsonConvert.SerializeObject(rawProps);
 
         await _context.SaveChangesAsync();
         return true;
@@ -128,7 +109,7 @@ public class DeviceService : IDeviceService
 
         if (device == null) return false;
 
-        _context.DeviceEmployees.RemoveRange(device.DeviceEmployees); // 👈 Remove related records
+        _context.DeviceEmployees.RemoveRange(device.DeviceEmployees);
         _context.Devices.Remove(device);
 
         await _context.SaveChangesAsync();
