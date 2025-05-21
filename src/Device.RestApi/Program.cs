@@ -71,4 +71,46 @@ app.MapDelete("/api/devices/{id:int}", async (int id, IDeviceService service) =>
     return success ? Results.NoContent() : Results.NotFound();
 });
 
+app.MapGet("/api/employees", async (DeviceContext db) =>
+{
+    var employees = await db.Employees
+        .Include(e => e.Person)
+        .Select(e => new
+        {
+            id = e.Id,
+            fullName = $"{e.Person.FirstName} {e.Person.MiddleName} {e.Person.LastName}"
+        })
+        .ToListAsync();
+
+    return Results.Ok(employees);
+});
+
+app.MapGet("/api/employees/{id:int}", async (int id, DeviceContext db) =>
+{
+    var employee = await db.Employees
+        .Include(e => e.Person)
+        .Include(e => e.Position)
+        .FirstOrDefaultAsync(e => e.Id == id);
+
+    if (employee == null)
+        return Results.NotFound();
+
+    return Results.Ok(new
+    {
+        id = employee.Id,
+        firstName = employee.Person.FirstName,
+        middleName = employee.Person.MiddleName,
+        lastName = employee.Person.LastName,
+        salary = employee.Salary,
+        hireDate = employee.HireDate,
+        position = new
+        {
+            id = employee.Position.Id,
+            name = employee.Position.Name
+        }
+    });
+});
+
+
+
 app.Run();
